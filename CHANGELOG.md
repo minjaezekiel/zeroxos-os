@@ -133,31 +133,53 @@ See `ROADMAP.md` §2 (milestones M1–M7) and the Phase 1 plan.
   - Reordered the GDT so **user-data (0x18) precedes user-code (0x20)** — required
     for `sysret` to derive the correct user `CS`/`SS` from `STAR[63:48]`.
   - `init_syscalls()` is wired into `arch::x86_64::init()` after the GDT loads.
+- **First real boot — Limine (Milestone 7). 🎉 Phase 1 complete.**
+  - Boot path pivoted from multiboot2 to the **Limine** bootloader: the same ISO
+    boots in QEMU **and on real UEFI + BIOS hardware** (`dd` to USB), the
+    foundation for "install anywhere."
+  - `crates/zerox-kernel/src/serial.rs` — a 16550 UART driver on COM1 (`0x3F8`)
+    and a `log::Log` backend; the panic handler ([panic.rs]) and exception
+    dispatcher ([idt.rs] `isr_dispatch`) now dump message/registers over serial.
+  - `crates/zeroxos-boot/src/main.rs` rewritten as a Limine `kmain`: declares
+    Limine requests (base revision, bootloader-info, HHDM, memory map,
+    framebuffer, stack), wires the HHDM offset into the HAL direct map, registers
+    the real bootloader memory map with the buddy allocator, installs the CPU
+    tables, boots the kernel, and paints the framebuffer.
+  - `linker/x86_64.ld`: `ENTRY(kmain)` + a page-aligned `.limine_requests`
+    section (KEEP). `crates/zeroxos-boot/build.rs` tracks the linker script and
+    target JSON so edits force a rebuild.
+  - Build/run: `scripts/mk-iso.sh` (fetches Limine, builds a hybrid BIOS+UEFI ISO
+    via `xorriso`), `make iso`, `make qemu-iso`, `make qemu-iso-uefi`;
+    `boot/limine.conf`.
+  - **Verified in QEMU:** boots to the full serial boot log (HHDM offset,
+    **509 MiB real RAM across 3 regions**, every subsystem init, `boot complete`,
+    framebuffer 1280×800), then halts; the framebuffer is painted (visible in the
+    QEMU window).
+  - Bugs fixed while bringing it up: the `.limine_requests` section shared a page
+    with `.rodata` (Limine rejects mixed-permission pages) → page-aligned it;
+    requested Limine base revision lowered 6 → 3 (9.6.7's max); and a real
+    codegen-level bug in `reload_segments` where the compiler aliased the CS
+    selector and the return-address temporary into one register, so `lretq`
+    loaded a garbage `CS` (#GP) — fixed by reading the selector before writing
+    the temporary.
 
-### Non-functional (deliberately deferred)
-- The `zeroxos-boot` image links but is **not runnable in QEMU yet**: it has no
-  multiboot2 header, sets up no stack, and installs no serial logger, so it
-  produces no output. That is milestone **M7** (also: QEMU must be installed —
-  `brew install qemu`).
-- The bare page-table path compiles and is host-tested as logic, but its live
-  behaviour (direct-map base, `set_frame_allocator` → buddy) is only exercised
-  once we boot in QEMU (M7).
+### Non-functional (deliberately deferred to later phases)
+- **Installer** (partition → format zeroxfs → copy → install bootloader to the
+  ESP → hardware detection): needs disk drivers + on-disk zeroxfs (Phase 3) and a
+  UI. Today's install path is "flash the ISO to USB and boot" (see MANUAL).
 - The `syscall_entry` stub does not yet switch to a per-CPU kernel stack and
-  assumes a single CPU — sufficient for Phase 1 (nothing issues a `syscall`
-  until userspace exists in Phase 2). `switch_to` is not yet driven by the
-  scheduler (the scheduler still models threads without real register state).
-- `isr_dispatch` halts on any exception; serial dump + page-fault handling
-  arrive in **M7**. ISR-stub / syscall-stub stack alignment is deferred
-  (harmless while soft-float/no-SSE).
+  assumes a single CPU (nothing issues a `syscall` until userspace, Phase 2).
+  `switch_to` is not yet scheduler-driven.
+- `isr_dispatch` halts on any exception (no recovery yet). ISR-/syscall-stub
+  stack alignment is deferred (harmless while soft-float/no-SSE).
 - `hal::arch::x86_64::allocate_dma` and the bare IRQ paths are still
-  `unimplemented!()`.
+  `unimplemented!()`. No aarch64 backend yet.
 - Bare-metal builds require nightly `-Z` flags (`json-target-spec`, `build-std`);
   baked into `make build-x86_64` and the `cargo kbuild` alias.
 
 ### Notes
-- Phase 1 status: **M0–M6 complete**; only **M7 (first QEMU boot)** remains.
-  M7 adds a multiboot2 header + assembly stub (stack setup), a 0x3F8 serial
-  logger, and boots the image in QEMU. It requires QEMU to be installed.
+- **Phase 1 (boot on real hardware) is complete: M0–M7 done.** Next up is
+  Phase 2 (ELF loader + first userspace program) per `ROADMAP.md` §19.
 
 ## [0.1.0] — foundational skeleton
 

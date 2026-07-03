@@ -31,15 +31,18 @@ pub unsafe fn reload_segments(code_selector: u16, data_selector: u16) {
             sel = in(reg) data_selector,
             options(nostack, preserves_flags),
         );
-        // CS via far return: push new selector + a return address, then `retfq`.
+        // CS via far return: push new CS selector, then a return address, then
+        // `retfq` (pops RIP, then CS). We push `code` *before* computing `tmp`
+        // so it is read before any register the compiler might alias between the
+        // two operands is overwritten.
         core::arch::asm!(
-            "lea {tmp}, [rip + 2f]",
             "push {code}",
+            "lea {tmp}, [rip + 2f]",
             "push {tmp}",
             "retfq",
             "2:",
             code = in(reg) code_selector as u64,
-            tmp = lateout(reg) _,
+            tmp = out(reg) _,
             options(preserves_flags),
         );
     }

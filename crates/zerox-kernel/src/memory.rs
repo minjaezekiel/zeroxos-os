@@ -213,15 +213,29 @@ impl MemoryManager {
     }
 
     pub fn init(&mut self) {
-        // In real kernel: walk the bootloader-provided memory map and register
-        // each usable region with the buddy allocator. On host, give ourselves
-        // a 256 MB fake physical memory.
-        let fake_pages = (256 * 1024 * 1024) / PAGE_SIZE as u64;
-        self.buddy.add_region(PageFrame(0), fake_pages);
-        TOTAL_MEMORY.store(fake_pages * PAGE_SIZE as u64, Ordering::Relaxed);
-        FREE_MEMORY.store(fake_pages * PAGE_SIZE as u64, Ordering::Relaxed);
+        // If real physical regions were already registered (bare-metal boot
+        // parses the bootloader memory map before boot), keep them. Otherwise —
+        // e.g. the host simulator — give ourselves 256 MB of fake RAM.
+        if self.buddy.total_pages() == 0 {
+            let fake_pages = (256 * 1024 * 1024) / PAGE_SIZE as u64;
+            self.buddy.add_region(PageFrame(0), fake_pages);
+        }
+        let pages = self.buddy.total_pages();
+        TOTAL_MEMORY.store(pages * PAGE_SIZE as u64, Ordering::Relaxed);
+        FREE_MEMORY.store(pages * PAGE_SIZE as u64, Ordering::Relaxed);
         log::info!("[mem] buddy allocator initialized with {} pages ({} MB)",
-            fake_pages, fake_pages * PAGE_SIZE as u64 / 1024 / 1024);
+            pages, pages * PAGE_SIZE as u64 / 1024 / 1024);
+    }
+
+    /// Register a usable physical region `[base, base+len)` (bytes) with the
+    /// buddy allocator. Called from the bare-metal boot path with entries from
+    /// the bootloader memory map, before [`MemoryManager::init`].
+    pub fn register_region(&mut self, base: u64, len: u64) {
+        let start_pfn = base / PAGE_SIZE as u64;
+        let pages = len / PAGE_SIZE as u64;
+        if pages > 0 {
+            self.buddy.add_region(PageFrame(start_pfn), pages);
+        }
     }
 
     /// Allocate a single 4 KB page.

@@ -147,11 +147,42 @@ pub struct InterruptFrame {
 #[cfg(feature = "bare")]
 #[no_mangle]
 pub extern "C" fn isr_dispatch(frame: *const InterruptFrame) {
+    use core::fmt::Write;
+
     // SAFETY: the stub always passes a valid frame pointer.
-    let vector = unsafe { (*frame).vector };
-    let _ = vector;
-    // TODO(M7): print vector, error code, and the register dump over serial.
-    // TODO(M4): if vector == 14 (page fault), attempt demand paging / CoW.
+    let f = unsafe { &*frame };
+
+    // Reclaim the serial lock (we are not returning) and dump the fault.
+    unsafe { crate::serial::force_unlock() };
+    let mut port = crate::serial::COM1_PORT.lock();
+    let _ = write!(port, "\n\n*** CPU EXCEPTION #{} ***\n", f.vector);
+    let _ = write!(port, "  error_code={:#x}\n", f.error_code);
+    let _ = write!(
+        port,
+        "  rip={:#018x} cs={:#x} rflags={:#x}\n",
+        f.rip, f.cs, f.rflags
+    );
+    let _ = write!(port, "  rsp={:#018x} ss={:#x}\n", f.rsp, f.ss);
+    let _ = write!(
+        port,
+        "  rax={:#018x} rbx={:#018x} rcx={:#018x} rdx={:#018x}\n",
+        f.rax, f.rbx, f.rcx, f.rdx
+    );
+    let _ = write!(
+        port,
+        "  rsi={:#018x} rdi={:#018x} rbp={:#018x}\n",
+        f.rsi, f.rdi, f.rbp
+    );
+    // Vector 14 (#PF) also has the faulting address in CR2.
+    if f.vector == 14 {
+        let cr2: u64;
+        unsafe { core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags)) };
+        let _ = write!(port, "  cr2={:#018x} (page fault address)\n", cr2);
+        // TODO(Phase 2): demand paging / CoW here instead of halting.
+    }
+    let _ = write!(port, "  system halted.\n");
+    drop(port);
+
     loop {
         unsafe { core::arch::asm!("cli; hlt", options(nomem, nostack)) };
     }

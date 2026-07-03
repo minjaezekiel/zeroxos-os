@@ -55,12 +55,24 @@ build-x86_64: ## Build the bare-metal kernel image (custom target + build-std)
 		-Z build-std=core,compiler_builtins,alloc \
 		-Z build-std-features=compiler-builtins-mem
 
-qemu-x86_64: build-x86_64 ## Boot the kernel image in QEMU with a serial console
+iso: build-x86_64 ## Build a bootable zeroxos.iso (Limine, BIOS + UEFI)
+	./scripts/mk-iso.sh
+
+qemu-iso: iso ## Boot the ISO in QEMU (BIOS) with a serial console
 	qemu-system-x86_64 \
-		-kernel $(KERNEL_BIN) \
-		-m 256M \
+		-cdrom zeroxos.iso \
+		-m 512M \
 		-serial stdio \
 		-no-reboot -no-shutdown
 
-clean: ## Remove build artifacts
+qemu-iso-uefi: iso ## Boot the ISO in QEMU under UEFI firmware (needs OVMF at $$OVMF)
+	qemu-system-x86_64 \
+		-cdrom zeroxos.iso \
+		-m 512M \
+		-bios $${OVMF:-/usr/local/share/qemu/edk2-x86_64-code.fd} \
+		-serial stdio \
+		-no-reboot -no-shutdown
+
+clean: ## Remove build artifacts (keeps the fetched Limine bootloader)
 	$(CARGO) clean
+	rm -rf build/iso_root zeroxos.iso

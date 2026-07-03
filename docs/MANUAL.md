@@ -56,19 +56,41 @@ in-sim.
 
 ---
 
-## 4. Building the bare-metal kernel (x86_64) — *from M2 onward*
+## 4. Building & booting the real kernel (x86_64)
+
+zeroxos boots via the **Limine** bootloader. The same ISO runs in QEMU and on
+real UEFI/BIOS hardware.
 
 ```bash
-make build-x86_64             # builds the custom target with build-std → a bootable ELF
-make qemu-x86_64              # boots the kernel image in QEMU (serial console) — from M7
+make build-x86_64   # link the freestanding kernel ELF (nightly + build-std)
+make iso            # fetch Limine + build a hybrid BIOS/UEFI zeroxos.iso
+make qemu-iso       # boot the ISO in QEMU (BIOS), serial log on the terminal
+make qemu-iso-uefi  # boot under UEFI firmware (set $OVMF to your edk2 code.fd)
 ```
 
-`make build-x86_64` works today (M2): it produces
-`target/x86_64-unknown-zeroxos/release/zeroxos-boot`, a statically-linked ELF
-with `.text` at `0xffffffff80200000`. It requires the pinned nightly and passes
-`-Z json-target-spec -Z build-std=core,compiler_builtins,alloc` under the hood.
-`make qemu-x86_64` will only produce output once M7 adds the multiboot2 header,
-stack setup, and serial logger. See `ROADMAP.md` §2.
+Expected serial output ends with the kernel boot log and
+`[ INFO] [boot] zeroxos v0.1 booted. Welcome.`; the QEMU window shows a deep-blue
+framebuffer. Prereqs: the pinned nightly, `xorriso`, and `qemu` (§1).
+`scripts/mk-iso.sh` fetches a pinned Limine release into `build/` (gitignored)
+and builds its host install tool.
+
+### Installing zeroxos on a real machine (today)
+
+zeroxos is a **bootable live image** — the Linux "flash a USB and boot it" flow:
+
+```bash
+make iso
+# find your USB device (careful — this ERASES it):
+#   macOS:  diskutil list           → /dev/diskN
+#   Linux:  lsblk                    → /dev/sdX
+sudo dd if=zeroxos.iso of=/dev/diskN bs=4m    # macOS: use /dev/rdiskN
+```
+
+Boot the target machine from that USB (UEFI or legacy BIOS). You'll get the
+serial/framebuffer boot log. A **guided disk installer** (partition a drive,
+format zeroxfs, copy the system, install the bootloader to the ESP) is a later
+phase — it needs disk drivers + on-disk zeroxfs (roadmap Phase 3). See
+`CHANGELOG.md` for the installability roadmap.
 
 ---
 
@@ -97,7 +119,9 @@ Legend: ✅ works · ⚠️ partial/simulated · ❌ not started
 | Page tables | ✅ | **M4 done** — host-tested 4-level PML4 walker; bare `map_page`/`unmap_page` bound to CR3 + direct-map + frame hook |
 | Context switch | ✅ | **M5 done** — `TaskContext` + naked `switch_to`; `init_kernel_task` forges new-thread frames (not yet scheduler-driven) |
 | Syscalls | ✅ | **M6 done** — host-tested dispatch table; `syscall`/`sysret` MSR setup + naked entry; installed at boot |
-| QEMU boot | ❌ | **M7 target** (Phase 1 exit) — needs QEMU installed |
+| Boot on real hardware (Limine) | ✅ | **M7 done — Phase 1 complete.** Boots in QEMU + real UEFI/BIOS from an ISO; serial boot log + framebuffer |
+| Serial console + `log` | ✅ | COM1 16550 driver; boot log, panics, exception dumps over serial |
+| Real memory map | ✅ | Limine memory map → buddy allocator (509 MiB in QEMU); HHDM direct map wired to page tables |
 | ELF loader / userspace | ❌ | Phase 2 |
 | On-disk fs / virtio-blk | ❌ | Phase 3 |
 | Shell / coreutils | ❌ | Phase 4 |
@@ -131,8 +155,9 @@ JSON), `linker/` (linker scripts), `boot/` (multiboot2 entry), and
 ## 7. Where to start next
 
 Check `CHANGELOG.md` `[Unreleased]` and the matrix above for the first `❌`.
-The active milestone is always the lowest-numbered incomplete one in
-`ROADMAP.md` §2. Currently: **M7 — first QEMU boot** (the Phase 1 exit): add
-`boot/x86_64-boot.S` (multiboot2 header + stack), a 0x3F8 serial logger backing
-the `log` crate, wire the panic handler / `isr_dispatch` to dump over serial,
-and boot with `make qemu-x86_64`. **Requires QEMU** (`brew install qemu`).
+**Phase 1 (boot on real hardware) is complete (M0–M7).** The next milestone is
+**Phase 2 — run a userspace program** (`ROADMAP.md` §19): an ELF loader, a
+minimal VFS with `open/read/write/close`, `fork/exec/exit/wait`, and an
+initramfs hello-world. The `syscall` dispatch table (`arch/x86_64/syscall.rs`)
+and `TaskContext`/`switch_to` (`arch/x86_64/context.rs`) are the hooks it builds
+on.

@@ -18,6 +18,8 @@ path = "src/main.rs"
 # HAL with no `host` feature (the workspace default) → the real bare-metal arch
 # backend is selected by target (x86_64 → arch/x86_64.rs).
 hal = { workspace = true }
+limine = "0.6.5"
+log = { workspace = true }
 # Kernel with the `bare` feature → provides the #[global_allocator] and
 # #[panic_handler] for the freestanding binary.
 zerox-kernel = { workspace = true, features = ["bare"] }

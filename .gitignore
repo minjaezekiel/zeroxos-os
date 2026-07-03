@@ -8,6 +8,10 @@
 # Kernel image / QEMU byproducts
 *.cpio
 *.img
+*.iso
+
+# ISO build tree + fetched Limine bootloader
+/build/
 
 # Editor / OS cruft
 .DS_Store

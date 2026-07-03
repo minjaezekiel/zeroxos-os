@@ -23,6 +23,8 @@ pub mod arch;
 pub mod error;
 pub mod heap;
 pub mod panic;
+#[cfg(feature = "bare")]
+pub mod serial;
 pub mod scheduler;
 pub mod memory;
 pub mod ipc;

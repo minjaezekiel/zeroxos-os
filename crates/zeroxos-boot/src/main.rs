@@ -1,62 +1,200 @@
-//! zeroxos bare-metal entry point (x86_64).
+//! zeroxos bare-metal entry point (x86_64), booted by the **Limine** bootloader.
 //!
-//! This is the freestanding binary that links the `#![no_std]` kernel into a
-//! bootable image. It is compiled only for `targets/x86_64-unknown-zeroxos.json`.
+//! Limine loads this ELF, sets up a 64-bit long-mode environment with a stack
+//! and a higher-half direct map, and jumps to [`kmain`]. We declare a set of
+//! Limine *requests* (below); the bootloader fills in their responses before
+//! handing control over. From those we learn the physical memory map, the
+//! Higher-Half Direct Map (HHDM) offset, and the framebuffer.
 //!
-//! ## Boot flow (current — milestone M2)
-//! 1. `_start` is the ELF entry point (see `linker/x86_64.ld` `ENTRY(_start)`).
-//! 2. Initialize the early kernel heap over a static `.bss` arena so that
-//!    `alloc`-backed kernel structures work.
-//! 3. Initialize the HAL, then boot the kernel.
-//! 4. Halt.
-//!
-//! ## Not yet done (later milestones)
-//! - **M7**: a proper multiboot2 header + assembly stub that sets up a real
-//!   stack before jumping here, and wiring a serial-port logger so the kernel's
-//!   boot log appears on the QEMU console. Until then this produces a valid,
-//!   linkable ELF but is not expected to print anything.
-//! - The early heap is a fixed static arena; once the bootloader memory map is
-//!   parsed (M7), the heap is grown from buddy-owned physical frames.
+//! The same ELF, wrapped in a Limine ISO, boots in QEMU and on real UEFI/BIOS
+//! hardware — see `docs/MANUAL.md` and `scripts/mk-iso.sh`.
 
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
+use limine::request::{
+    BootloaderInfoRequest, FramebufferRequest, HhdmRequest, MemmapRequest, StackSizeRequest,
+};
+use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
 
-/// Size of the early boot heap carved out of `.bss` (1 MiB). Enough for the
-/// kernel's boot-time allocations before a real memory map exists.
-const EARLY_HEAP_SIZE: usize = 1024 * 1024;
+// --- Limine requests --------------------------------------------------------
+//
+// All requests live in the `.limine_requests` section (see linker/x86_64.ld),
+// bounded by start/end markers so the bootloader can scan them, and marked
+// `#[used]` + KEEP so neither the compiler nor the linker drops them.
 
-/// The early boot heap arena. Lives in `.bss`; the boot loader zeroes it.
-static mut EARLY_HEAP: [u8; EARLY_HEAP_SIZE] = [0; EARLY_HEAP_SIZE];
+/// Ask Limine for a comfortable 64 KiB stack.
+const STACK_SIZE: u64 = 64 * 1024;
 
-/// Kernel entry point. The bootloader jumps here (M7 adds the multiboot2 header
-/// and stack setup that precede this in a real boot).
-///
-/// # Safety
-/// Called exactly once, by the bootloader, with the machine in the state the
-/// multiboot2 spec guarantees.
+#[used]
+#[link_section = ".limine_requests_start"]
+static REQUESTS_START: RequestsStartMarker = RequestsStartMarker::new();
+
+// Request Limine base revision 3 (the well-supported modern protocol with
+// virtual/HHDM pointers). The crate's default (`new()`) asks for revision 6,
+// which Limine 9.6.7 does not support.
+#[used]
+#[link_section = ".limine_requests"]
+static BASE_REVISION: BaseRevision = BaseRevision::with_revision(3);
+
+#[used]
+#[link_section = ".limine_requests"]
+static BOOTLOADER_INFO: BootloaderInfoRequest = BootloaderInfoRequest::new();
+
+#[used]
+#[link_section = ".limine_requests"]
+static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new(STACK_SIZE);
+
+#[used]
+#[link_section = ".limine_requests"]
+static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[link_section = ".limine_requests"]
+static MEMMAP_REQUEST: MemmapRequest = MemmapRequest::new();
+
+#[used]
+#[link_section = ".limine_requests"]
+static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
+#[used]
+#[link_section = ".limine_requests_end"]
+static REQUESTS_END: RequestsEndMarker = RequestsEndMarker::new();
+
+// --- Frame allocator hook for the HAL page-table code -----------------------
+
+/// Allocate one physical frame from the kernel buddy allocator; returns its
+/// physical byte address (0 on failure). Registered with the HAL so
+/// `map_page` can allocate intermediate page tables.
+fn alloc_frame() -> u64 {
+    let mut kernel = zerox_kernel::KERNEL.lock();
+    match kernel.memory.alloc_page() {
+        Some(frame) => frame.0 * 4096, // PageFrame holds a PFN
+        None => 0,
+    }
+}
+
+/// Return a physical frame to the buddy allocator.
+fn free_frame(phys: u64) {
+    let mut kernel = zerox_kernel::KERNEL.lock();
+    kernel.memory.free_page(zerox_kernel::memory::PageFrame(phys / 4096));
+}
+
+/// Kernel entry point. Limine jumps here with interrupts disabled, in long mode,
+/// on the stack it set up for us.
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
-    // SAFETY: single-threaded, pre-scheduler context; `EARLY_HEAP` is a unique
-    // static we hand exclusively to the allocator, once.
+pub extern "C" fn kmain() -> ! {
+    // 1. Serial console + logger first, so everything below is visible and any
+    //    panic during bring-up is reported.
+    zerox_kernel::serial::init_logger(log::LevelFilter::Info);
+    log::info!("[boot] zeroxos bootstrapping via Limine...");
+
+    // 2. Confirm the bootloader speaks a base revision we support.
+    if !BASE_REVISION.is_supported() {
+        log::error!("[boot] unsupported Limine base revision — halting");
+        halt();
+    }
+    if let Some(info) = BOOTLOADER_INFO.response() {
+        log::info!("[boot] bootloader: {} {}", info.name(), info.version());
+    }
+
+    // 3. Higher-Half Direct Map: tells us where physical memory is visible in
+    //    our address space. The M4 page-table walker needs this base.
+    let hhdm_offset = HHDM_REQUEST.response().map(|r| r.offset).unwrap_or(0);
+    log::info!("[boot] HHDM offset = {:#x}", hhdm_offset);
+    hal::arch::set_direct_map_base(hhdm_offset);
+    hal::arch::set_frame_allocator(alloc_frame, free_frame);
+
+    // 4. Early kernel heap (bootstrap; grown from real frames once the buddy
+    //    allocator has the memory map).
     unsafe {
         let base = core::ptr::addr_of_mut!(EARLY_HEAP) as usize;
         zerox_kernel::heap::init_kernel_heap(base, EARLY_HEAP_SIZE);
-        // Install the GDT (+TSS) and IDT so the CPU has valid segments and
-        // exception handlers before anything can fault.
+    }
+
+    // 5. Register the bootloader's usable RAM with the kernel buddy allocator.
+    let mut usable_bytes: u64 = 0;
+    let mut regions: u64 = 0;
+    if let Some(memmap) = MEMMAP_REQUEST.response() {
+        let mut kernel = zerox_kernel::KERNEL.lock();
+        for entry in memmap.entries() {
+            if entry.type_ == limine::memmap::MEMMAP_USABLE {
+                kernel.memory.register_region(entry.base, entry.length);
+                usable_bytes += entry.length;
+                regions += 1;
+            }
+        }
+    }
+    log::info!(
+        "[boot] usable RAM: {} MiB across {} regions",
+        usable_bytes / 1024 / 1024,
+        regions
+    );
+
+    // 6. CPU tables (GDT/IDT/TSS + syscalls) and HAL init.
+    unsafe {
         zerox_kernel::arch::x86_64::init();
         hal::init();
     }
+    log::info!("[boot] arch + HAL initialized");
 
-    // Boot the kernel. On bare metal there is no logger installed yet (M7), so
-    // this runs silently; a boot failure is surfaced by halting below.
-    let mut kernel = zerox_kernel::Kernel::new();
-    let _boot_result = kernel.boot();
+    // 7. Boot the kernel proper (logs each subsystem over serial).
+    match zerox_kernel::KERNEL.lock().boot() {
+        Ok(()) => log::info!("[boot] kernel subsystems online"),
+        Err(e) => {
+            log::error!("[boot] kernel boot failed: {}", e);
+            halt();
+        }
+    }
 
-    // Nothing left to schedule yet — halt the CPU forever.
-    loop {
-        // SAFETY: `hlt` with interrupts is a safe idle; no memory touched.
-        unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) };
+    // 8. Prove the framebuffer handoff: report its mode and paint the screen so
+    //    there is a visible sign of life on real hardware / the QEMU window.
+    if let Some(fb_resp) = FRAMEBUFFER_REQUEST.response() {
+        if let Some(fb) = fb_resp.framebuffers().first() {
+            log::info!(
+                "[boot] framebuffer: {}x{} {}bpp",
+                fb.width,
+                fb.height,
+                fb.bpp
+            );
+            paint_banner(fb);
+        }
+    }
+
+    log::info!("[boot] zeroxos v0.1 booted. Welcome.");
+    halt();
+}
+
+/// Fill the framebuffer with zeroxos's deep-blue so a successful boot is
+/// visible even without a text console.
+fn paint_banner(fb: &limine::framebuffer::Framebuffer) {
+    // Assume the common 32-bpp little-endian BGRX layout Limine provides.
+    let pixel: u32 = 0x0011_2244; // deep blue
+    let addr = fb.address() as *mut u8;
+    let pitch = fb.pitch as usize;
+    let width = fb.width as usize;
+    let height = fb.height as usize;
+    if fb.bpp != 32 {
+        return;
+    }
+    for y in 0..height {
+        let row = unsafe { addr.add(y * pitch) } as *mut u32;
+        for x in 0..width {
+            unsafe { row.add(x).write_volatile(pixel) };
+        }
     }
 }
+
+/// Halt the CPU forever (interrupts disabled).
+fn halt() -> ! {
+    loop {
+        unsafe { core::arch::asm!("cli; hlt", options(nomem, nostack)) };
+    }
+}
+
+/// Size of the early boot heap carved out of `.bss` (1 MiB), used until the
+/// buddy allocator has the real memory map.
+const EARLY_HEAP_SIZE: usize = 1024 * 1024;
+
+/// The early boot heap arena. Lives in `.bss`; Limine zeroes it.
+static mut EARLY_HEAP: [u8; EARLY_HEAP_SIZE] = [0; EARLY_HEAP_SIZE];

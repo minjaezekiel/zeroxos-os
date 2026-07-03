@@ -12,10 +12,22 @@
 #[cfg(all(feature = "bare", not(test)))]
 #[panic_handler]
 fn on_panic(info: &core::panic::PanicInfo) -> ! {
-    // TODO(M3): dump `info` (message + location) over the serial port before
-    // halting. For now we cannot print, so we just stop.
-    let _ = info;
+    use core::fmt::Write;
+
+    // The panicking task may have been holding the serial lock; reclaim it so we
+    // can still report. Safe: we are panicking and (for now) single-threaded.
+    unsafe { crate::serial::force_unlock() };
+    let mut port = crate::serial::COM1_PORT.lock();
+    let _ = write!(port, "\n\n*** KERNEL PANIC ***\n");
+    if let Some(loc) = info.location() {
+        let _ = write!(port, "  at {}:{}:{}\n", loc.file(), loc.line(), loc.column());
+    }
+    let _ = write!(port, "  {}\n", info.message());
+    let _ = write!(port, "  system halted.\n");
+    drop(port);
+
+    // Halt forever with interrupts disabled.
     loop {
-        core::hint::spin_loop();
+        unsafe { core::arch::asm!("cli; hlt", options(nomem, nostack)) };
     }
 }
