@@ -14,8 +14,15 @@
 //! - [`process`] — process and thread tables
 //! - [`driver`] — kernel-mode and user-mode driver framework
 
+#![cfg_attr(not(test), no_std)]
 #![allow(dead_code)]
 
+extern crate alloc;
+
+pub mod arch;
+pub mod error;
+pub mod heap;
+pub mod panic;
 pub mod scheduler;
 pub mod memory;
 pub mod ipc;
@@ -23,6 +30,7 @@ pub mod security;
 pub mod process;
 pub mod driver;
 
+pub use error::{KernelError, KernelResult};
 use spin::Mutex;
 
 /// Global kernel state.
@@ -55,15 +63,24 @@ impl Kernel {
     }
 
     /// Boot the kernel. Initializes all subsystems in dependency order.
-    pub fn boot(&mut self) {
+    ///
+    /// Returns [`KernelError`] if a subsystem fails to initialize. On success
+    /// the kernel is marked booted and ready to run tasks.
+    pub fn boot(&mut self) -> KernelResult<()> {
         if self.booted {
-            return;
+            return Ok(());
         }
         self.boot_time_ns = hal::timer::read_time_ns();
         log::info!("[kernel] booting zeroxos v0.1.0...");
         log::info!("[kernel] arch: {:?}", hal::current_arch());
 
         self.memory.init();
+        // A kernel with no usable physical memory cannot proceed — this is a
+        // real, testable failure path rather than a decorative Result.
+        if self.memory.buddy.total_pages() == 0 {
+            log::error!("[kernel] memory init produced zero usable pages");
+            return Err(KernelError::MemoryInit);
+        }
         log::info!("[kernel] memory manager initialized");
 
         self.scheduler.init();
@@ -81,6 +98,7 @@ impl Kernel {
         self.booted = true;
         let elapsed = hal::timer::read_time_ns().saturating_sub(self.boot_time_ns);
         log::info!("[kernel] boot complete in {} µs", elapsed / 1000);
+        Ok(())
     }
 
     /// Kernel tick — called by the timer IRQ handler at the scheduler's tick rate.

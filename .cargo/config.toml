@@ -1,0 +1,26 @@
+# Cargo configuration for zeroxos.
+#
+# IMPORTANT: we deliberately do NOT set a default `[build] target` and do NOT
+# put `build-std` under `[unstable]` here. Both would apply to *every* build,
+# including the host simulator (`cargo run -p zerox-sim`) — and a global
+# `build-std = ["core", "alloc"]` would strip `std` from the host build and
+# break the sim. The bare-metal build passes `--target` and `-Z build-std=...`
+# explicitly instead (see the Makefile's `build-x86_64` target).
+#
+# The settings below are scoped to the custom bare-metal target only, so host
+# builds are completely unaffected.
+
+# Pass the kernel linker script and mark the entry point when building for the
+# freestanding target. Applied only when `--target x86_64-unknown-zeroxos` is
+# selected (cargo matches on the JSON file stem).
+[target.x86_64-unknown-zeroxos]
+rustflags = [
+    "-C", "link-arg=-Tlinker/x86_64.ld",
+    "-C", "link-arg=--gc-sections",
+]
+# `cargo run --target x86_64-unknown-zeroxos.json` boots the image in QEMU.
+runner = "qemu-system-x86_64 -serial stdio -m 256M -no-reboot -no-shutdown -kernel"
+
+[alias]
+# Convenience: build the bootable kernel image with build-std in one command.
+kbuild = "build -p zeroxos-boot --release --target targets/x86_64-unknown-zeroxos.json -Z json-target-spec -Z build-std=core,compiler_builtins,alloc -Z build-std-features=compiler-builtins-mem"

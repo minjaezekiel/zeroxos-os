@@ -1,5 +1,7 @@
 //! zeroxfs journal — write-ahead log for metadata consistency.
 
+use alloc::vec::Vec;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalOp {
     Begin,

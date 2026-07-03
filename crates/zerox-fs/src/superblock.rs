@@ -1,5 +1,6 @@
 //! zeroxfs superblock — the on-disk anchor of a filesystem.
 
+use alloc::vec::Vec;
 use crate::checksum::crc32;
 
 /// Magic number identifying a zeroxfs superblock.

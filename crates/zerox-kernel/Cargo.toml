@@ -10,7 +10,21 @@ description = "zeroxos hybrid kernel — scheduler, memory manager, IPC, capabil
 name = "zerox_kernel"
 path = "src/lib.rs"
 
+[features]
+# Default build: no global allocator or panic handler, and no HAL backend
+# forced — the depending crate selects one (`host` for the sim, `bare` for the
+# kernel image).
+default = []
+# Host/sim build: pull in the HAL's userspace `host` backend.
+host = ["hal/host"]
+# Bare-metal build: register the kernel heap as #[global_allocator] and provide
+# the #[panic_handler]. The HAL's bare backend is selected by target arch.
+# Only compiles under a no_std target (see M2).
+bare = []
+
 [dependencies]
+# HAL defaults to no backend (set in the workspace manifest); this crate's
+# `host`/`bare` features (and the depending crate) select one.
 hal = { workspace = true }
 log = { workspace = true }
 spin = "0.9"

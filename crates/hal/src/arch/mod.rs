@@ -9,6 +9,13 @@ mod host;
 #[cfg(feature = "host")]
 pub use host::*;
 
+// The x86_64 page-table walker is pure, host-testable logic. Compile it on any
+// x86_64 target — regardless of the `host` feature — so its unit tests run under
+// `cargo test`. The bare backend (`x86_64.rs`) binds it to CR3 + a direct map.
+#[cfg(target_arch = "x86_64")]
+#[path = "x86_64/paging.rs"]
+pub mod paging;
+
 #[cfg(all(not(feature = "host"), target_arch = "x86_64"))]
 mod x86_64;
 #[cfg(all(not(feature = "host"), target_arch = "x86_64"))]

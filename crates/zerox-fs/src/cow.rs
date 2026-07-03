@@ -4,6 +4,9 @@
 //! block is modified, only the path from root to that leaf is duplicated;
 //! the rest of the tree is shared.
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 #[derive(Debug, Clone)]
 pub struct CowNode {
     pub id: u64,

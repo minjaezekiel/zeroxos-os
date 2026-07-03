@@ -13,6 +13,10 @@
 //! zeroxfs runs as a **userspace server**. A bug in the filesystem driver
 //! crashes the daemon, not the kernel — the supervisor restarts it transparently.
 
+#![cfg_attr(not(test), no_std)]
+
+extern crate alloc;
+
 pub mod superblock;
 pub mod journal;
 pub mod checksum;

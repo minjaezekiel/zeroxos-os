@@ -4,6 +4,8 @@
 //! capability set, an address space, and one or more threads. Threads are
 //! the schedulable unit.
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use crate::security::CapabilitySet;
 
 /// Process identifier.

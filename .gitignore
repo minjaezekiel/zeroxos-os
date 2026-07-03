@@ -1,0 +1,15 @@
+# Rust build artifacts
+/target/
+
+# Backend/local build caches
+**/*.rs.bk
+*.pdb
+
+# Kernel image / QEMU byproducts
+*.cpio
+*.img
+
+# Editor / OS cruft
+.DS_Store
+.vscode/
+.idea/

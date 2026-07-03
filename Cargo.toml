@@ -10,6 +10,22 @@ members = [
     "crates/agdb",
     "crates/agprof",
     "crates/zerox-sim",
+    "crates/zeroxos-boot",
+]
+# `zeroxos-boot` only builds for the bare-metal target, so it is kept out of the
+# default set. `cargo build`/`cargo test` (no `-p`) operate on these members and
+# stay on the host — the simulator never regresses. Build the kernel image with
+# `make build-x86_64` (or `cargo kbuild`), which targets `zeroxos-boot` directly.
+default-members = [
+    "crates/agex",
+    "crates/hal",
+    "crates/zerox-kernel",
+    "crates/zerox-fs",
+    "crates/zerox-runtime",
+    "crates/apm",
+    "crates/agdb",
+    "crates/agprof",
+    "crates/zerox-sim",
 ]
 
 [workspace.package]
@@ -23,7 +39,11 @@ description = "A cross-platform high-performance hybrid operating system"
 [workspace.dependencies]
 # Internal crates
 agex = { path = "crates/agex" }
-hal = { path = "crates/hal" }
+# HAL defaults to NO backend so bare-metal consumers don't accidentally pull the
+# std-based `host` backend (Cargo ignores per-member `default-features`
+# overrides on inherited deps, so this must be set here). Host consumers opt in
+# with `features = ["host"]`.
+hal = { path = "crates/hal", default-features = false }
 zerox-kernel = { path = "crates/zerox-kernel" }
 zerox-fs = { path = "crates/zerox-fs" }
 zerox-runtime = { path = "crates/zerox-runtime" }

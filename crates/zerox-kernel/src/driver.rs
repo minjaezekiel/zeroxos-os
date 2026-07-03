@@ -6,6 +6,10 @@
 //! - **User-mode drivers** — for recoverable devices (USB peripherals, printers, sensors)
 //! - **Paravirtualized drivers** — for VMs and cloud (virtio)
 
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// Driver class — what kind of device this driver manages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DriverClass {

@@ -16,6 +16,7 @@
 //! All three share lock-free queues, batched delivery, and cache-aware buffer
 //! layout.
 
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Maximum payload size for a Fast Message.

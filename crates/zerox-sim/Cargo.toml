@@ -11,8 +11,8 @@ name = "zerox-sim"
 path = "src/main.rs"
 
 [dependencies]
-hal = { workspace = true }
-zerox-kernel = { workspace = true }
+hal = { workspace = true, features = ["host"] }
+zerox-kernel = { workspace = true, features = ["host"] }
 zerox-fs = { workspace = true }
 zerox-runtime = { workspace = true }
 agex = { workspace = true }

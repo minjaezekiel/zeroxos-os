@@ -11,6 +11,6 @@ name = "zerox_runtime"
 path = "src/lib.rs"
 
 [dependencies]
-hal = { workspace = true }
-zerox-kernel = { workspace = true }
+hal = { workspace = true, features = ["host"] }
+zerox-kernel = { workspace = true, features = ["host"] }
 log = { workspace = true }

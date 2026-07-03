@@ -1,0 +1,16 @@
+# Pinned toolchain for zeroxos.
+#
+# A dated nightly is required for the bare-metal build path:
+#   - `build-std` (building core/alloc for a custom target)
+#   - custom JSON target specs (M2)
+#   - `#[naked]` functions and inline asm used by GDT/IDT, context switch,
+#     and the syscall entry trampoline (M3, M5, M6)
+#
+# The host simulator also builds on stable, but everyone uses this pinned
+# nightly repo-wide for reproducible builds. Bump the date deliberately and
+# note it in CHANGELOG.md.
+[toolchain]
+channel = "nightly-2026-07-03"
+components = ["rust-src", "llvm-tools-preview", "rustfmt", "clippy"]
+targets = ["x86_64-unknown-none"]
+profile = "minimal"

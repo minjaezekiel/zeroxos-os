@@ -9,6 +9,7 @@
 //! - **NUMA awareness** on multi-socket systems
 //! - **Lock-free** ring buffers for hot paths
 
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// Page size in bytes.
@@ -175,7 +176,7 @@ impl SlabAllocator {
         }
         // Allocate a new object via the host (in real kernel: buddy alloc + slab cache)
         let layout = core::alloc::Layout::from_size_align(self.object_size, 8).unwrap();
-        let ptr = unsafe { std::alloc::alloc(layout) };
+        let ptr = unsafe { alloc::alloc::alloc(layout) };
         self.in_use.fetch_add(1, Ordering::Relaxed);
         ptr
     }

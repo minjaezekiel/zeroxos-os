@@ -7,6 +7,7 @@
 //! Capabilities are unforgeable kernel handles — they cannot be elevated or
 //! stolen, only granted by the user or inherited from a parent process.
 
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// The set of capabilities an application can hold.

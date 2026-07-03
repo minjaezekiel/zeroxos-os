@@ -12,6 +12,9 @@
 //! - [`power`] — sleep, hibernate, shutdown, reboot, CPU frequency
 //! - [`arch`] — architecture-specific implementations (x86_64, aarch64)
 
+// `no_std` on bare metal; the `host` backend (arch/host.rs) uses std, so keep
+// std available when the `host` feature is on.
+#![cfg_attr(not(feature = "host"), no_std)]
 #![allow(dead_code)]
 
 pub mod cpu;

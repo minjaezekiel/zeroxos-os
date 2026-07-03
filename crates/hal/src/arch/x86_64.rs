@@ -16,6 +16,8 @@
 use crate::interrupt::{Handler, Irq, IrqConfig};
 use crate::memory::{PageFlags, PhysAddr, VirtAddr};
 use crate::power::{RebootReason, SleepState};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use super::paging;
 
 pub unsafe fn cpu_halt() {
     unsafe { core::arch::asm!("hlt", options(nostack, preserves_flags)); }
@@ -52,13 +54,95 @@ pub fn cpu_id() -> u32 {
     0
 }
 
-pub unsafe fn map_page(_virt: VirtAddr, _phys: PhysAddr, _flags: PageFlags) {
-    // Would manipulate CR3 page tables here.
-    unimplemented!("x86_64 bare-metal map_page — use 'host' feature for simulation")
+// --- Page-table runtime glue -----------------------------------------------
+//
+// The reusable walking logic lives in `paging`; here we bind it to the running
+// CPU: the active PML4 comes from CR3, physical frames are reached through a
+// direct map, and intermediate tables are allocated from a frame source the
+// kernel registers at boot. The direct-map base and the frame-allocator hooks
+// are wired up by the boot code (M7) once the memory map is known.
+
+/// Base added to a physical address to reach it virtually (physical direct map).
+/// Defaults to 0 (identity map), valid for the early boot low-memory identity
+/// mapping the loader/boot stub establishes.
+static DIRECT_MAP_BASE: AtomicU64 = AtomicU64::new(0);
+/// `fn() -> u64` returning a fresh physical frame (0 = allocation failed).
+static FRAME_ALLOC_FN: AtomicUsize = AtomicUsize::new(0);
+/// `fn(u64)` returning a frame to the allocator.
+static FRAME_FREE_FN: AtomicUsize = AtomicUsize::new(0);
+
+/// Set the physical direct-map base used to reach page tables (call at boot).
+pub fn set_direct_map_base(base: u64) {
+    DIRECT_MAP_BASE.store(base, Ordering::Relaxed);
 }
 
-pub unsafe fn unmap_page(_virt: VirtAddr) {
-    unimplemented!("x86_64 bare-metal unmap_page — use 'host' feature for simulation")
+/// Register the physical-frame allocator the page-table code uses for
+/// intermediate tables (call at boot, before any `map_page`).
+pub fn set_frame_allocator(alloc: fn() -> u64, free: fn(u64)) {
+    FRAME_ALLOC_FN.store(alloc as usize, Ordering::Relaxed);
+    FRAME_FREE_FN.store(free as usize, Ordering::Relaxed);
+}
+
+struct DirectMapper;
+// SAFETY: on bare metal every physical frame is reachable at phys + base.
+unsafe impl paging::PhysMapper for DirectMapper {
+    unsafe fn table_at(&self, phys: u64) -> *mut paging::PageTable {
+        (phys + DIRECT_MAP_BASE.load(Ordering::Relaxed)) as *mut paging::PageTable
+    }
+}
+
+struct GlobalFrames;
+impl paging::FrameAllocator for GlobalFrames {
+    fn alloc_zeroed(&mut self) -> Option<u64> {
+        let f = FRAME_ALLOC_FN.load(Ordering::Relaxed);
+        if f == 0 {
+            return None;
+        }
+        // SAFETY: the stored value is a valid `fn() -> u64` set by the kernel.
+        let alloc: fn() -> u64 = unsafe { core::mem::transmute(f) };
+        let phys = alloc();
+        if phys == 0 {
+            return None;
+        }
+        // Zero the fresh frame through the direct map.
+        let base = DIRECT_MAP_BASE.load(Ordering::Relaxed);
+        unsafe { core::ptr::write_bytes((phys + base) as *mut u8, 0, paging::PAGE_SIZE as usize) };
+        Some(phys)
+    }
+    fn free(&mut self, phys: u64) {
+        let f = FRAME_FREE_FN.load(Ordering::Relaxed);
+        if f != 0 {
+            let free: fn(u64) = unsafe { core::mem::transmute(f) };
+            free(phys);
+        }
+    }
+}
+
+/// Read the active top-level page table (PML4) physical address from CR3.
+fn read_cr3() -> u64 {
+    let cr3: u64;
+    unsafe { core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags)) };
+    cr3 & paging::PTE_ADDR_MASK
+}
+
+/// Flush a single TLB entry for `virt`.
+unsafe fn flush_tlb(virt: u64) {
+    unsafe { core::arch::asm!("invlpg [{}]", in(reg) virt, options(nostack, preserves_flags)) };
+}
+
+pub unsafe fn map_page(virt: VirtAddr, phys: PhysAddr, flags: PageFlags) {
+    let root = read_cr3();
+    // A mapping failure here is a kernel bug (double-map / OOM); the caller's
+    // contract says `virt` is free. We ignore the Result rather than panic on
+    // the early boot path; higher layers validate inputs.
+    let _ = unsafe { paging::map_page_in(root, virt, phys, flags, &DirectMapper, &mut GlobalFrames) };
+    unsafe { flush_tlb(virt.0) };
+}
+
+pub unsafe fn unmap_page(virt: VirtAddr) {
+    let root = read_cr3();
+    let _ = unsafe { paging::unmap_page_in(root, virt, &DirectMapper) };
+    unsafe { flush_tlb(virt.0) };
 }
 
 pub fn allocate_dma(_size: usize, _align: usize) -> Option<crate::memory::DmaRegion> {
@@ -101,14 +185,20 @@ pub unsafe fn hibernate() {
 
 pub fn shutdown() -> ! {
     // ACPI shutdown — write 0x2000 to 0x604 (QEMU) or 0xB004 (older ACPI)
-    unsafe { core::arch::asm!("outw", in("dx") 0x604u16, in("ax") 0x2000u16); }
-    loop { unsafe { core::arch::asm!("hlt"); } }
+    unsafe {
+        core::arch::asm!("out dx, ax", in("dx") 0x604u16, in("ax") 0x2000u16,
+            options(nomem, nostack, preserves_flags));
+    }
+    loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack, preserves_flags)); } }
 }
 
 pub fn reboot(_reason: RebootReason) -> ! {
-    // Keyboard controller reset
-    unsafe { core::arch::asm!("outb", in("dx") 0x64u16, in("al") 0xFEu8); }
-    loop { unsafe { core::arch::asm!("hlt"); } }
+    // Keyboard controller reset (pulse the CPU reset line via port 0x64).
+    unsafe {
+        core::arch::asm!("out dx, al", in("dx") 0x64u16, in("al") 0xFEu8,
+            options(nomem, nostack, preserves_flags));
+    }
+    loop { unsafe { core::arch::asm!("hlt", options(nomem, nostack, preserves_flags)); } }
 }
 
 pub fn set_cpu_frequency(_cpu: u32, _freq_khz: u32) {

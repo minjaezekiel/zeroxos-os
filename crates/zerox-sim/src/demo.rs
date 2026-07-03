@@ -22,7 +22,7 @@ pub fn boot_demo() -> ExitCode {
     // === Kernel boot ===
     {
         let mut k = KERNEL.lock();
-        k.boot();
+        k.boot().expect("kernel boot failed");
     }
 
     // === Spawn system processes ===
@@ -145,7 +145,7 @@ pub fn gaming_demo() -> ExitCode {
     unsafe { hal::init(); }
     {
         let mut k = KERNEL.lock();
-        k.boot();
+        k.boot().expect("kernel boot failed");
     }
 
     // Spawn the game process
@@ -348,7 +348,7 @@ pub fn run_agex_file(path: &str) -> ExitCode {
     println!();
 
     unsafe { hal::init(); }
-    { let mut k = KERNEL.lock(); k.boot(); }
+    { let mut k = KERNEL.lock(); k.boot().expect("kernel boot failed"); }
 
     // Read and compile the agex source
     let src = match std::fs::read_to_string(path) {
@@ -395,7 +395,7 @@ pub fn filesystem_demo() -> ExitCode {
     println!();
 
     unsafe { hal::init(); }
-    { let mut k = KERNEL.lock(); k.boot(); }
+    { let mut k = KERNEL.lock(); k.boot().expect("kernel boot failed"); }
 
     // Create a superblock for a 1 GB filesystem
     let sb = Superblock::new(4096, 1_000_000);
@@ -441,7 +441,7 @@ pub fn ipc_demo() -> ExitCode {
     println!();
 
     unsafe { hal::init(); }
-    { let mut k = KERNEL.lock(); k.boot(); }
+    { let mut k = KERNEL.lock(); k.boot().expect("kernel boot failed"); }
 
     let (pid_a, pid_b) = {
         let mut k = KERNEL.lock();

@@ -1,0 +1,23 @@
+[package]
+name = "zeroxos-boot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "zeroxos bare-metal entry point (x86_64) — links the no_std kernel into a bootable image"
+
+[[bin]]
+name = "zeroxos-boot"
+path = "src/main.rs"
+
+# This crate only ever builds for the custom bare-metal target. It is excluded
+# from `default-members` in the root manifest, so `cargo build`/`cargo test`
+# (host) never attempt to compile it. Build it via `make build-x86_64` or
+# `cargo kbuild`.
+[dependencies]
+# HAL with no `host` feature (the workspace default) → the real bare-metal arch
+# backend is selected by target (x86_64 → arch/x86_64.rs).
+hal = { workspace = true }
+# Kernel with the `bare` feature → provides the #[global_allocator] and
+# #[panic_handler] for the freestanding binary.
+zerox-kernel = { workspace = true, features = ["bare"] }

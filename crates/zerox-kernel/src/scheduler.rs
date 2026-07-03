@@ -9,6 +9,7 @@
 //! synchronizes with GPU frame presentation. Background services get -10 priority
 //! and are throttled when a game holds focus.
 
+use alloc::vec::Vec;
 use crate::process::ThreadId;
 use core::sync::atomic::{AtomicU64, Ordering};
 

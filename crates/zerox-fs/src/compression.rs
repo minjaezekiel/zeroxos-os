@@ -1,5 +1,7 @@
 //! zeroxfs compression — transparent block-level compression.
 
+use alloc::vec::Vec;
+
 /// Compression algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Algorithm {
