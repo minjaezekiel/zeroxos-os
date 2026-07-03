@@ -1,0 +1,16 @@
+[package]
+name = "zerox-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "zeroxos userspace runtime — window manager, audio, network, power, package services"
+
+[lib]
+name = "zerox_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+hal = { workspace = true }
+zerox-kernel = { workspace = true }
+log = { workspace = true }

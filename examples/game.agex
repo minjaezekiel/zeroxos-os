@@ -1,0 +1,49 @@
+// game.agex — demonstrates classes, null safety, sealed types, smart casts
+// Designed to exercise the agex compiler end-to-end.
+
+data class Vector3(x: f32, y: f32, z: f32)
+
+sealed class Damage {
+    class Physical(amount: f32) : Damage()
+    class Magical(amount: f32) : Damage()
+    class True_(amount: f32) : Damage()
+}
+
+class Player(name: String, var hp: f32 = 100.0) {
+    fn take_damage(dmg: Damage) {
+        match dmg {
+            Damage.Physical(a) => { hp -= a * 0.7 }
+            Damage.Magical(a)  => { hp -= a * 0.9 }
+            Damage.True_(a)    => { hp -= a }
+        }
+        if hp < 0 {
+            hp = 0
+        }
+    }
+}
+
+fn String.shout() -> String {
+    return this.uppercase() + "!!!"
+}
+
+fn process(obj: Any) {
+    if obj is String {
+        print("got string of length", obj.length)
+    }
+}
+
+fn main() {
+    let hero = Player("Aegis")
+    let pos = Vector3(1.0, 2.0, 3.0)
+    print("Hero:", hero.name)
+    print("Pos:", pos)
+    hero.take_damage(Damage.Physical(50.0))
+    print("HP after physical:", hero.hp)
+    hero.take_damage(Damage.True_(20.0))
+    print("HP after true:", hero.hp)
+
+    let whisper = "hello"
+    print(whisper.shout())
+
+    process("smart cast works")
+}

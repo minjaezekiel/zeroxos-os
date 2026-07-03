@@ -1,0 +1,22 @@
+[package]
+name = "hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Hardware Abstraction Layer for zeroxos — ARM64 and x86_64 portability surface"
+
+[lib]
+name = "hal"
+path = "src/lib.rs"
+
+[features]
+default = ["host"]
+# Run the HAL as a userspace library (used by zerox-sim)
+host = []
+# Bare-metal x86_64 build (real hardware)
+x86_64_bare = []
+# Bare-metal aarch64 build (real hardware)
+aarch64_bare = []
+
+[dependencies]

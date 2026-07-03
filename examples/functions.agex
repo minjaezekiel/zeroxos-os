@@ -1,0 +1,26 @@
+// functions.agex — exercises function declarations and calls
+fn add(a: int, b: int) -> int {
+    return a + b
+}
+
+fn multiply(a: int, b: int) -> int = a * b
+
+fn factorial(n: int) -> int {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+fn main() {
+    let x = add(10, 20)
+    let y = multiply(5, 6)
+    let f = factorial(5)
+    print("add:", x)
+    print("multiply:", y)
+    print("5! =", f)
+
+    for i in range(5) {
+        print("i =", i)
+    }
+}

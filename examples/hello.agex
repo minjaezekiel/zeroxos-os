@@ -1,0 +1,4 @@
+// hello.agex — minimal agex program that compiles to runnable Rust
+let name = "zeroxos"
+const VERSION = "1.0"
+print("Hello from", name, "v" + VERSION)

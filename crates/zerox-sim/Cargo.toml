@@ -1,0 +1,21 @@
+[package]
+name = "zerox-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "zerox-sim — host-runnable simulation of the zeroxos kernel"
+
+[[bin]]
+name = "zerox-sim"
+path = "src/main.rs"
+
+[dependencies]
+hal = { workspace = true }
+zerox-kernel = { workspace = true }
+zerox-fs = { workspace = true }
+zerox-runtime = { workspace = true }
+agex = { workspace = true }
+log = { workspace = true }
+clap = { workspace = true }
+env_logger = "0.11"

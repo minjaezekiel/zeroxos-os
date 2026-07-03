@@ -1,0 +1,21 @@
+[package]
+name = "agex"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The agex programming language compiler — Python readability, Rust performance"
+
+[lib]
+name = "agex"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agc"
+path = "src/bin/agc.rs"
+
+[dependencies]
+clap = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,16 @@
+[package]
+name = "zerox-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "zeroxos hybrid kernel — scheduler, memory manager, IPC, capabilities, drivers"
+
+[lib]
+name = "zerox_kernel"
+path = "src/lib.rs"
+
+[dependencies]
+hal = { workspace = true }
+log = { workspace = true }
+spin = "0.9"

@@ -1,0 +1,14 @@
+[package]
+name = "agprof"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "agprof — profiler for agex programs (CPU, GPU, memory, IPC)"
+
+[[bin]]
+name = "agprof"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }

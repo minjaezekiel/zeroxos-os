@@ -1,0 +1,14 @@
+[package]
+name = "zerox-fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "zeroxfs — the native copy-on-write, checksummed, encrypted filesystem"
+
+[lib]
+name = "zerox_fs"
+path = "src/lib.rs"
+
+[dependencies]
+log = { workspace = true }

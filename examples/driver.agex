@@ -1,0 +1,24 @@
+// driver.agex — kernel driver definition in agex
+driver NvidiaDriver : GpuInterface {
+    fn initialize() {
+        // hardware setup
+    }
+    fn submit_command_buffer(cmd: *u8, len: usize) {
+        // ring buffer push
+    }
+    fn present(swapchain_image: u32) {
+        // queue present
+    }
+}
+
+driver NvmeDriver : BlockDriver {
+    fn read_sector(lba: u64, buf: *u8) {
+        // NVMe read
+    }
+    fn write_sector(lba: u64, buf: *u8) {
+        // NVMe write
+    }
+    fn flush() {
+        // drain submission queue
+    }
+}
